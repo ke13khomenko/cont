@@ -1,0 +1,142 @@
+= Отчет по лабораторной работе
+
+== Задание:
+
+Сделать измерения температуры, напряжения с канала 0
+и опорного напряжения в режиме continious.
+
+== Выполнение работы:
+
+Первым делом был подключен внешний источник питания HSE.
+Затем подключили АЦП и канал 0 к источнику тактирования, а также настроили канал
+0 в аналоговый режим.
+
+Для проведения измерений настроим АЦП на измерение с 3 каналов:
+
+- Включить датчик температуры, установив бит TSVREFE, в регистре
+ADC_Common_CCR.
+
+- Установить разрядность в регистре ADC_CR1. Установим требуемое
+значение 12 бит.
+
+- Включим АЦП в режим сканирования.Этот режим используется
+для сканирования группы аналоговых каналов.
+
+- Подключим требуемые каналы в регистре ADC1_SQR3. Выберем каналы 18,17 и 0.
+
+- Установить режим непрерывного преобразования
+
+- Установить количество измерений 3 в регистре ADC1_SQR1,
+используя для этого бит L.
+
+- Чтобы данные сохранялись после каждого измерения установим 1 бите EOCS.
+
+- Включить АЦП с помощью установки бита ADON.
+
+- Запустить АЦП на преобразование с помощью установки бита  SWSTART.
+
+-- Для измерения температуры необходимо дождаться готовности бита EOC.
+Полученные данные необходимо преобразовать по формуле приведенной в коде
+с помощью калибровочных коэффициентов CAL1 и CAL2.
+
+-- Для измерения опорного напряжения возьмем данные , которые считываются с 17 канала
+
+-- Для измерения напряжения считаем данные   полученные с 0 канала и преобразуем
+их в напряжение по приведенной в коде формуле.
+
+- Для увелчения точности все рассчитанные данные  умножим на поправочный коэффициент
+
+- Данные полученные датчиком отображены в терминале I/O.
+
+== Код программы
+
+[, cpp]
+
+----
+#include "rccregisters.hpp"
+#include "gpiocregisters.hpp"
+#include "gpioaregisters.hpp"
+#include <iostream>
+#include <bitset>
+#include "nvicregisters.hpp"
+#include "adc1registers.hpp"
+#include "adccommonregisters.hpp"
+
+
+extern "C"
+{
+int __low_level_init(void)
+ {
+   RCC::CR::HSEON::On::Set();
+   while(!RCC::CR::HSERDY::Ready::IsSet())
+    {
+    }
+
+   RCC::CFGR::SW::Hse::Set();
+
+   while(!RCC::CFGR::SWS::Hse::IsSet())
+    {
+    }
+   RCC::CR::HSION::Off::Set();
+   RCC::APB2ENR::ADC1EN::Enable::Set();
+   RCC::AHB1ENR::GPIOAEN::Enable::Set();
+   GPIOA::MODER::MODER0::Analog::Set();
+
+   ADC_Common::CCR::TSVREFE::Value1::Set();
+   ADC1::CR1::RES::Bit12::Set();
+   ADC1::CR1::SCAN::Value1::Set();
+   ADC1::SQR3::SQ1::Value18::Set();
+   ADC1::SQR3::SQ2::Value17::Set();
+   ADC1::SQR3::SQ3::Value0::Set();
+   ADC1::CR2::CONT::Continuous::Set();
+   ADC1::CR2::EOCS::aftereachchanell::Set();
+   ADC1::SQR1::L::conversions3::Set();
+   ADC1::CR2::ADON::Enable::Set();
+   return 1;
+ }
+}
+
+
+int main()
+ {
+   uint16_t TS_CAL1 = *reinterpret_cast < uint16_t* >(0x1FFF7A2C);
+   uint16_t TS_CAL2 = *reinterpret_cast < uint16_t* >(0x1FFF7A2E);
+   float Vref = *reinterpret_cast < uint16_t* >(0x1FFF7A2A);
+
+
+   for(;;)
+    {
+      ADC1::CR2::SWSTART::Start::Set();
+      while(ADC1::SR::EOC::NotReady::IsSet())
+       {
+       };
+      uint32_t Temp_Data = ADC1::DR::DATA::Get();
+
+      while(ADC1::SR::EOC::NotReady::IsSet())
+       {
+       };
+      float Vref_Data = ADC1::DR::DATA::Get();
+
+      while(ADC1::SR::EOC::NotReady::IsSet())
+       {
+       };
+      uint32_t Res_Data = ADC1::DR::DATA::Get();
+
+      float temp = (((30.0f-110.0f)*Temp_Data+(TS_CAL1*110.0f-TS_CAL2*30.0f))/(TS_CAL1-TS_CAL2));
+      float K = Vref/Vref_Data;
+      float Voltage = (Res_Data*(3.3F/4095.0F))*K;
+
+      std::cout << "Temperatyra: " << temp*K << std::endl;
+      std::cout <<"Opornoe napryagenie: " << Vref_Data << std::endl;
+      std::cout << "Napryagenie: " << Voltage << std::endl;
+    }
+  return 0;
+ }
+----
+
+
+
+== Выходные значения датчика:
+
+image::https://github.com/musenzovakhomenko/3data/blob/main/znachenie.jpg[]
+
